@@ -35,38 +35,61 @@ const registerUtilisateur = async (req, res) => {
 
         
         const emailRegex = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/;
-        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+        const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)[A-Za-z\d]{8,}$/;
         const phoneRegex = /^\d{8}$/;
+        const nameRegex = /^[a-zA-ZÀ-ÿ\- ]{2,}$/;
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+
 
         const list_required = [data.nom, data.prenom, data.password, data.telephone, 
             data.dateNaissance, 
             data.sexe];
 
 for (let i = 0; i < list_required.length; i++) {
-    if (!list_required[i]) { 
+    if (!list_required[i] || list_required[i].trim() === '') { 
         return res.status(400).json({ message: 'tous les champs sont obligatoires' });
+    }
+    else{
+
+        if (!emailRegex.test(data.email)) { //verifier email and mdp
+            return res.status(400).json({ message: 'email invalide' });}
+        else{    
+            if(!nameRegex.test(data.nom))    {
+                return res.status(400).json({'message':'name invalide'});}
+            
+            if(!nameRegex.test(data.prenom))    {
+                return res.status(400).json({'message':'prenom invalide'});
+            }
+            if(!nameRegex.test(data.prenom))    {
+                return res.status(400).json({'message':'prenom invalide'});
+            }
+
+            if(!dateRegex.test(data.dateNaissance))    {
+                return res.status(400).json({'message':'date de naissance invalide format YYYY-MM-DD'});
+            }
+    
+            if (!passwordRegex.test(data.password)) {
+                return res.status(400).json({ message: 'password invalide' });
+            }
+    
+            if (!phoneRegex.test(data.telephone)) {
+                return res.status(400).json({ message: 'num de téléphone invalide : doit contenir 8 chiffres.' });
+            }    
+
+            }    
     }
 }
    
-             
+       
 
-        // verification email et mdp et telephone
-        if (!emailRegex.test(data.email)) {
-            return res.status(400).json({ message: 'email invalide' });}
-
-        if (!passwordRegex.test(data.password)) {
-            return res.status(400).json({ message: 'password invalide' });
-        }
-
-        if (!phoneRegex.test(data.telephone)) {
-            return res.status(400).json({ message: 'num de téléphone invalide : doit contenir 8 chiffres.' });
-        }    
-
-//verif email dans la database
+//verif email dans la database ou pas (l'unicité)
         const database_email = await Utilisateur.findOne({ email: data.email });
         if (database_email) {
             return res.status(400).json({ message: 'essayer un autre email ' });
         }
+
+
 
         const usr = new Utilisateur(data);
 
@@ -80,30 +103,60 @@ for (let i = 0; i < list_required.length; i++) {
        
         const savedUtilisateur = await usr.save();
 
-        res.status(200).json(savedUtilisateur);
+        const token=await create_tkn(savedUtilisateur._id)
+
+        res.cookie("jwt",token,{httpOnly:true , maxAge:3*24*60*60*1000})
+
+        res.status(200).json({user_id:savedUtilisateur._id,token:token});
+
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 };
 
+//####################TOKEN Create#####################################
+
+
+const create_tkn=(id)=>{
+
+    const payload = { id };
+    secret="123456789"
+    const maxAge=3*24*60*60
+
+    return jwt.sign(payload,secret,{expiresIn:maxAge});
+    
+    }
+
 
 //############### LOGIN ##############################################
 const loginUser=async(req,res)=>{
-    data=req.body;
-    user=await Utilisateur.findOne({email:data.email});
+    const data=req.body;
 
-    if(!user || !data){res.status(404).send("email or password not correct");}
-    else{
+    const emailRegex = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/;
+    
 
-    validpass=bcrypt.compareSync(data.password,user.password); //pour la comparer avec mdp de user d email trouvé
+    if(!data || !emailRegex.test(data.email) || data.password.trim() === '') {
+        return res.status(400).json({'message':'format invalide'})
+    }
+    else {
+        try{
+           const user=await Utilisateur.findOne({'email':data.email});
 
-       if(!validpass) {res.status(404).send("email or password invalide");}
+            if (!user){ return res.status(404).json({'message':"email or password invalide"})}
 
-       else {
-        payload={_id:user._id,email:user.email,name:user.name};
-       token=jwt.sign(payload,"123456789",{expiresIn:"1h"}); 
-            res.status(200).send(token);}
-    }}
+            else { const validPass = bcrypt.compareSync(data.password, user.password);
+                if(!validPass){return res.status(404).json({"message":"email or password incorrect"})}
+                else{
+                    const token=create_tkn(user._id);
+                    res.cookie('jwt',token,{httpOnly:true,maxAge:3*24*60*60*1000});
+                    res.status(200).json({"user_id":user._id,"token":token});
+                }
+            }
+
+        }
+        catch(err){return res.status(500).json({"message":err.message});}
+    }   
+}
 
 
 //############### mise a jour user ##############################################
